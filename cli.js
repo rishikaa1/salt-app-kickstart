@@ -33,7 +33,11 @@ cfonts.say('Salt Design System', {
 
 program
     .version('1.0.0')
-    .description('A simple CLI tool to create a salt App using Salt Design System By J.P.Morgan Chase & Co.')
+    .description('A simple CLI tool to create a salt App using Salt Design System By J.P.Morgan Chase & Co.');
+
+program
+    .command('create')
+    .description("Create a new Salt app")
     .option('-y, --yes', 'Accept all default prompts without interaction')
     .option('-d, --directory <dir>', 'Specify a custom directory for the app')
     .option('-n, --name <name>', 'Set a custom app name')
