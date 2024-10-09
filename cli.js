@@ -33,17 +33,12 @@ cfonts.say('Salt Design System', {
 
 program
     .version('1.0.0')
-    .description('A simple CLI tool to create a salt App using Salt Design System By J.P.Morgan Chase & Co.');
-
-program
-    .command('create')
-    .description("Create a new Salt app")
-    .option('-y, --yes', 'Accept all default prompts without interaction')
-    .option('-d, --directory <dir>', 'Specify a custom directory for the app')
+    .description('A simple CLI tool to create a salt App using Salt Design System By J.P.Morgan Chase & Co.')
+    .option('-d, --directory <path>', 'Specify a custom directory', './')
     .option('-n, --name <name>', 'Set a custom app name')
-    .option('-t, --template <template>', 'Select a specific template (Form, AgGrid, or AppHeader)')
+    .option('-t, --template <template>', 'Choose template (Form, AgGrid, or AppHeader)')
     .option('-g, --github', 'Automatically push to Github')
-    .option('./', 'Create the app in the current directory');
+    .option('-y, --yes', 'Accept all default prompts');
 
 const platform=os.platform();
 let installGitCommand='choco install git -y';
@@ -79,7 +74,6 @@ const questions=[
             return true;
           },
           filter: (input) => input.trim() || 'salt_app',
-          when: () => !program.opts().yes && !program.opts().name && !program.opts().['./'],
     },
     { 
         type: 'list', 
@@ -87,14 +81,12 @@ const questions=[
         message: "Choose the templates that you need in your app", 
         choices: [ "Form", "AgGrid","AppHeader"],
         default:"Form",
-        when: () => !program.opts().yes && !program.opts().template,
      },
      {
         type:'confirm',
         name:'push_to_github',
         message:'Do you want to push to github?',
         default:true,
-        when: () => !program.opts().yes && !program.opts().github,
     },
     {
         type:'input',
@@ -168,7 +160,7 @@ const questions=[
 ];
 
 program
-.command('create')
+.command('ask')
 .description("Please provide the information for the below questions")
 .action(aysnc () => {
     const options = program.opts();
@@ -181,55 +173,50 @@ program
             push_to_github: options.github || false,
         };
     } else {
-        responses = await inquirer.prompt(questions);
+        const filteredQuesrions = questions.filter(q => {
+            if (options.name && q.name === 'appName') return false;
+            if (options.template && q.name === 'template_choices') return false;
+            if (options.github !== undefined && q.name === 'push_to_github') return false;
+            return true;
+        });
+
+        responses = await inquirer.prompt(filteredQuestions);
+
+        responses = { ...responses, ...options };
     }
 
-    if (options.name) responses.appName = options.name;
-    if (options.template) responses.template_choices = options.template;
-    if (options.github) responses.push_to_github = true;
-
-    let appDir;
-    if (options['./']) {
-        appDir = process.cwd();
-        responses.appName = path.basename(appDir);
-    } else if (options.directory) {
-        appDir = path.resolve(options.directory);
-    } else {
-        appDir = path.join(process.cwd(), responses.appName);
-    }
-    
     try {
-          await install_dependencies(appDir);
-          await copyFolder(appDir, responses.template_choices);
+        const projectPath = path.join(options.directory, responses.appName);
+        fs.ensureDirSync(projectPath);
+        process.chdir(projectPath);
 
-          // Logic to create or overwrite index.html in the public folder
-          const publicPath = path.join(appDir, 'public', 'index.html');
-          fs.ensureDirSync(path.join(appDir, 'public'));
-          fs.writeFileSync(publicPath, content, 'utf8');
-          console.log(`index.html has been created in the public folder.`);
+        await install_dependencies(responses.appName);
+        await copyFolder(responses.appName, responses.template_choices);
+        
+        // Logic to create or overwrite index.html in the public folder
+        const publicPath = path.join(projectPath, 'public', 'index.html');
+        fs.ensureDirSync(path.join(projectPath, 'public'));
+        fs.writeFileSync(publicPath, content, 'utf8');
+        console.log(`index.html has been created in the public folder.`);
           
-             if(responses.push_to_github){
-              checkAndInstall('git',installGitCommand,platform);
-              checkAndInstall('gh',installGhCommand,platform);
-             let content=`GITHUB_TOKEN=${responses.token}`
-             let envPath=path.join(appDir, ".env");
-             fs.writeFile(envPath, content, 'utf-8', (err) => {
-                if (err) {
-                  console.error(`Error writing to .env: ${err.message}`);
-                  return;
-                }
-                console.log(`Content has been successfully written to ${envPath}`);
-              });
-              await push_to_github_remote(appDir, responses.token, responses.github_username, responses.github_repository_name, responses.github_branch_name, responses.github_commitMessage);
-            }
-            await run_in_localhost(appDir);
-            } catch(error){
-                console.log("Error : "+error.message);
-            }
+        if(responses.push_to_github){
+            checkAndInstall('git',installGitCommand,platform);
+            checkAndInstall('gh',installGhCommand,platform);
+            let content=`GITHUB_TOKEN=${responses.token}`
+            let envPath=path.join(projectPath, ".env");
+            fs.writeFile(envPath, content, 'utf-8');
+            console.log(`Content has been successfully written to ${envPath}`);
+            await push_to_github_remote(responses.appName, responses.token, responses.github_username, responses.github_repository_name, responses.github_branch_name, responses.github_commitMessage);
+        }
+        
+        await run_in_localhost(responses.appName);
+    } catch(error){
+        console.log("Error : "+error.message);
+    }
 });
 
 if (!process.argv.slice(2).length) {
     program.outputHelp();
-    process.argv.push('create');
+    process.argv.push('ask');
   }
 program.parse(process.argv);
