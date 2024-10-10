@@ -11,7 +11,10 @@
     "salt",
     "salt-app",
     "salt-app-kickstart",
-    "cli tool"
+    "cli tool",
+    "react",
+    "template",
+    "github"
   ],
   "author": "Duddekunta Devamani",
   "license": "MIT",
