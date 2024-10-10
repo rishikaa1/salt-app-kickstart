@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {Command} from 'commander'
+import {Command} from 'commander';
 import cfonts from 'cfonts';
 import readline from 'readline'
 import inquirer from 'inquirer'
@@ -32,13 +32,14 @@ cfonts.say('Salt Design System', {
 });
 
 program
-    .version('1.0.0')
-    .description('A simple CLI tool to create a salt App using Salt Design System By J.P.Morgan Chase & Co.')
-    .option('-d, --directory <path>', 'Specify a custom directory', './')
-    .option('-n, --name <name>', 'Set a custom app name')
-    .option('-t, --template <template>', 'Choose template (Form, AgGrid, or AppHeader)')
-    .option('-g, --github', 'Automatically push to Github')
-    .option('-y, --yes', 'Accept all default prompts');
+.version('1.0.0')
+.description('A simple CLI tool to create a salt App using Salt Design System By J.P.Morgan Chase & Co.')
+.option('-y', 'Accept all default prompts')
+.option('-d <directory>', 'Specify a custom directory')
+.option('-n <app-name>', 'Set a custom app name')
+.option('-t <template>', 'Choose a template (Form, AgGrid, AppHeader, Login')
+.option('-g', 'Automatically push to GitHub')
+.option('./', 'Create the app in the current directory');
 
 const platform=os.platform();
 let installGitCommand='choco install git -y';
@@ -79,14 +80,14 @@ const questions=[
         type: 'list', 
         name: 'template_choices', 
         message: "Choose the templates that you need in your app", 
-        choices: [ "Form", "AgGrid","AppHeader"],
-        default:"Form",
+        choices: [ "Form", "AgGrid","AppHeader","Login"],
+        default:"Form"
      },
      {
         type:'confirm',
         name:'push_to_github',
         message:'Do you want to push to github?',
-        default:true,
+        default:true
     },
     {
         type:'input',
@@ -162,61 +163,95 @@ const questions=[
 program
 .command('ask')
 .description("Please provide the information for the below questions")
-.action(aysnc () => {
-    const options = program.opts();
+.action(async () => {
     let responses={};
+    const options = program.opts();
 
-    if (options.yes) {
-        responses = {
-            appName: options.name || 'salt_app',
-            template_choice: options.template || 'Form',
-            push_to_github: options.github || false,
-        };
-    } else {
-        const filteredQuesrions = questions.filter(q => {
-            if (options.name && q.name === 'appName') return false;
-            if (options.template && q.name === 'template_choices') return false;
-            if (options.github !== undefined && q.name === 'push_to_github') return false;
-            return true;
-        });
+    // Handle options
+    if (options.y) {
+      responses.push_to_github = true;
+      responses.appName = options.n || 'salt_app';
+      responses.template_choices = options.t || "Form";
+     } else {
+      responses.push_to_github = options.g || false;
+      respomses.appName = options.n || 'salt_app';
+      responses.template_choices = options.t || "Form";
+     }
 
-        responses = await inquirer.prompt(filteredQuestions);
+     // Determine the target directory
+     let targetDirectory = options.d || process.cwd();
+     if (options['./']) {
+      targetDirectory = process.cwd(); // Use current directory if ./ is specified
+     }
 
-        responses = { ...responses, ...options };
-    }
+     const targetPath = path.join(targetDirectory, responses.appName);
 
-    try {
-        const projectPath = path.join(options.directory, responses.appName);
-        fs.ensureDirSync(projectPath);
-        process.chdir(projectPath);
+     // Check if the target directory exists
 
-        await install_dependencies(responses.appName);
-        await copyFolder(responses.appName, responses.template_choices);
-        
-        // Logic to create or overwrite index.html in the public folder
-        const publicPath = path.join(projectPath, 'public', 'index.html');
-        fs.ensureDirSync(path.join(projectPath, 'public'));
-        fs.writeFileSync(publicPath, content, 'utf8');
-        console.log(`index.html has been created in the public folder.`);
-          
-        if(responses.push_to_github){
-            checkAndInstall('git',installGitCommand,platform);
-            checkAndInstall('gh',installGhCommand,platform);
-            let content=`GITHUB_TOKEN=${responses.token}`
-            let envPath=path.join(projectPath, ".env");
-            fs.writeFile(envPath, content, 'utf-8');
+     const dirExists = fs.existsSync(targetDirectory);
+     if (!dirExists) {
+      const createDir = await inquirer.prompt({
+        type: 'confirm',
+        name: 'createDirectory',
+        message: `The directory ${targetDirectory} does not exist. Would you like to create one?`,
+        default: true
+      });
+      if (createDir.createDirectory) {
+        fs.mkdirSync(targetDIrectory, { recursive: true });
+        console.log(`Directory ${targetDirectory} has been created.`);
+      } else {
+        console.log('Exiting the process. Please provide a valid directory.');
+        process.exit(1);
+      }
+     }
+
+     // Check if the target path already exists
+     if (fs.existsSync(targetPath)) {
+      console.error(`Directory ${targetPath} already exists. Please choose a different name or directory.`)
+      process.exit(1);
+     }
+
+     const askQuestion = async () => {
+      await inquirer.prompt(questions).then(async (answers) => {
+        responses = { ...responses, ...answers };
+        try {
+          await install_dependencies(responses.appName);
+          await copyFolder(responses.appName, responses.template_choices);
+
+          // Logic to copy index.html from the existing template location
+          const existingIndexPath = path.join(__dirname, 'path_to_existing_index.html'); // Update with the correct path
+          const destIndexPath = path.join(targetPath, 'public', 'index.html');
+          fs.ensureDirSync(path.join(targetPath, 'public'));
+          fs.copyFileSync(existingIndexPath, destIndexPath);
+          console.log(`index.html has been copied to the public folder.`);
+
+          if (responses.push_to_github) {
+            checkAndInstall('git', installGitCommand, platform);
+            checkAndInstall('gh', installGhCommand, platform);
+            const envContent = `GITHUB_TOKEN=${responses.token}`;
+            const envPath = path.join(targetPath, '.env');
+            fs.writeFileSync(envPath, envContent, 'utf-8');
             console.log(`Content has been successfully written to ${envPath}`);
             await push_to_github_remote(responses.appName, responses.token, responses.github_username, responses.github_repository_name, responses.github_branch_name, responses.github_commitMessage);
+          }
+          await run_in_localhost(responses.appName);
+        } catch (error) {
+          console.log("Error: " + error.message);
         }
-        
-        await run_in_localhost(responses.appName);
-    } catch(error){
-        console.log("Error : "+error.message);
-    }
-});
+      }).catch((error) => {
+        if (error.isTtyError) {
+          console.log('Prompt could not be rendered in the current environment.');
+        } else {
+          console.log(`Program has been terminated. ${error}`);
+        }
+      });
+    };
+    askQuestion();
+  });
 
 if (!process.argv.slice(2).length) {
-    program.outputHelp();
-    process.argv.push('ask');
-  }
+  program.outputHelp();
+  process.argv.push('ask');
+}
+
 program.parse(process.argv);
